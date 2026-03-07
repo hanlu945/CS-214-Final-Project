@@ -52,6 +52,11 @@ class Topic:
 # =========================
 
 class Broker:
+    """
+    Kafka data broker managing N topics and M partitions with 
+    custom retention and priority-based eviction policies.
+    """
+    
     def __init__(
         self,
         total_storage: int,
@@ -62,7 +67,7 @@ class Broker:
         eviction_batch_size: int = 1,
         lambda_weight: float = 0.8,
         t_mid: float = 5.0, # mid priority threshold
-        t_high: float = 10.0, #high priority threshold
+        t_high: float = 10.0, # high priority threshold
         window_length: int = 100,
     ) -> None:
         self.total_storage = total_storage
@@ -95,8 +100,21 @@ class Broker:
         key: Optional[str] = None,
     ) -> dict:
         """
-        Publish a new message to a topic.
-        If the topic doesn't exist, create it and assign initial priority.
+        Publish a new message to a topic. If the topic doesn't exist, it will be 
+        created and assigned an initial priority tier.
+
+        Args:
+            topic_id (str): Name of the topic to publish to (e.g., "user-events")
+            payload_size (int): Size of the message in bytes
+            timestamp (int): Current simulation time step when message is created
+            producer_id (Optional[str]): ID of producer who sent the message
+            key (Optional[str]): Partitioning key for the message (Which entity this message belongs to)
+        
+        Returns:
+            dict: 
+                - success (bool): Whether publish succeeded
+                - partition (int): Which partition the message was assigned to
+                - offset (int): Message offset within the partition (sequential ID)
         """
         if topic_id not in self.topic_registry:
             init_result = self.initialPriority(topic_id)
@@ -143,6 +161,20 @@ class Broker:
         """
         Consume a message for the consumer.
         Re-consuming a message counts as a revisit.
+        
+        Args:
+            topic_id (str): Topic name
+            partition (int): Partition number
+            offset (int): Message offset
+            current_time (int): Time step when the message is being consumed
+        
+        Returns:
+            dict:
+                - success (bool): Whether consume succeeded
+                - topic_id (str): Topic name
+                - payload_size (int): Size of the message payload
+                - timestamp (int): Message creation timestamp
+                - msg_revisit_count (int): Updated revisit count
         """
         msg_result = self.getMsg(topic_id, partition, offset)
         if not msg_result["success"]:
@@ -171,7 +203,22 @@ class Broker:
         eviction_batch_size: Optional[int] = None,
     ) -> dict:
         """
-        Update retention policy configuration.
+        Update the retention policy of the broker.
+        
+        Args: 
+            mode (str): The retention policy mode to apply ('time' or 'lossy_priority')
+            retention_steps (Optional[int]): Max message lifetime in steps
+            capacity_byte (Optional[int]): Storage capacity limit in bytes for lossy retention
+            eviction_batch_size (Optional[int]): Number of messages to evict per cleanup step
+
+        Returns:
+            dict:
+                - success (bool): Whether the update succeeded
+                - mode (str): Current retention mode
+                - retention_steps (int): Current time retention setting
+                - capacity_byte (int): Current capacity limit
+                - eviction_batch_size (int): Current eviction batch size
+                - error (str): Error message if failed    
         """
         if mode not in {"time", "lossy_priority"}:
             return {
@@ -198,7 +245,14 @@ class Broker:
 
     def getStorageUsage(self) -> dict:
         """
-        Obtain current broker storage usage.
+        Obtain current broker storage usage consumption for monitoring and evaluation.
+        
+        Returns:
+            dict:
+                - success (bool): Whether the query succeeded
+                - total_storage (int): Total storage capacity of the broker (bytes)
+                - used_storage (int): Current storage used (bytes) 
+                - usage_ratio (float): used_storage / total_storage
         """
         return {
             "success": True,
@@ -212,6 +266,14 @@ class Broker:
     # =========================
 
     def promoteTopic(self, topic_id: str) -> dict:
+        """
+        Upgrade the priority tier for the topic.
+        
+        Returns:
+            dict: 
+                - success (bool): Whether promotion succeeded
+                - new_priority (int): The updated priority tier
+        """
         topic = self.topic_registry.get(topic_id)
         if topic is None:
             return {"success": False, "new_priority": None}
@@ -220,6 +282,14 @@ class Broker:
         return {"success": True, "new_priority": topic.priority}
 
     def demoteTopic(self, topic_id: str) -> dict:
+        """
+        Downgrade the priority tier for the topic.
+        
+        Returns:
+            dict: 
+                - success (bool): Whether demotion succeeded
+                - new_priority (int): The updated priority tier
+        """
         topic = self.topic_registry.get(topic_id)
         if topic is None:
             return {"success": False, "new_priority": None}
@@ -234,11 +304,19 @@ class Broker:
         bytes_needed: int = 0,
     ) -> dict:
         """
-        Delete messages when retention conditions are met.
+        Delete message(s) when conditions of retention policy are met.
+        
+        Args: 
+            reason (str): The reason for eviction ('time' or 'lossy_priority')
+            now (Optional[int]): Current timestamp used to check whether the message exceeds retention time
+            bytes_needed (int): Number of bytes needed to be freed under storage pressure (default=0)
 
-        reason:
-            - "time"
-            - "lossy_priority"
+        Returns:
+            dict:
+                - dropped_count (int): Total number of messages removed
+                - freed_bytes (int): Total amount of storage freed in bytes
+                - dropped_topics (list/str): Topics from which messages were removed
+                - reason (str): Time or lossy_priority    
         """
         dropped_count = 0
         freed_bytes = 0
@@ -304,8 +382,16 @@ class Broker:
 
     def initialPriority(self, topic_id: str) -> dict:
         """
-        All topics start at the same initial priority, 
-        and are later differentiated by revisit-based updates.
+        Assign initial tiers to topics. All topics start at the same initial 
+        priority, and are later differentiated by revisit-based updates.
+
+        Args:
+            topic_id (str): The topic being initialized
+
+        Returns: 
+            dict:
+                - success (bool): Whether the initialization was recorded 
+                - priority (int): Initial priority of topic
         """
         return {
             "success": True,
@@ -314,9 +400,19 @@ class Broker:
 
     def updateTopic(self, topic_id: str) -> dict:
         """
-        Update topic priority based on stored revisit statistics.
+        Update the priority tier of a topic based on stored revisit statistics. 
+        Triggered periodically or before lossy eviction. Uses EMA scoring:
+        
+        $score_t(topic) = \lambda \cdot score_{t-1}(topic) + (1-\lambda) \cdot recent\_revisit\_count(topic, t)$
 
-        score_t(topic) = λ * score_{t-1}(topic) + (1-λ) * recent_revisit_count(topic, t)
+        Args:
+           topic_id (str): Topic to evaluate
+
+        Returns:
+            dict:
+                - success (bool): Whether the topic update succeeded
+                - action_performed (str): "promote", "demote", or "unchanged"
+                - new_priority (int): Updated priority tier of the topic
         """
         topic = self.topic_registry.get(topic_id)
         if topic is None:
@@ -367,6 +463,18 @@ class Broker:
         Record one revisit event for a message.
         This does NOT automatically update priority every time.
         Priority should be updated periodically or before lossy eviction.
+        
+        Args: 
+            topic_id (str): The topic to which the revisited message belongs
+            partition (int): The partition the message is stored in
+            offset (int): Offset of revisited message
+            timestamp (int): Time when the revisit happens
+
+        Returns:
+            dict:
+                - success (bool): Whether the revisit was recorded 
+                - msg_revisit_count (int): Updated revisit count of the message
+                - error (str): Error message if failed    
         """
         topic = self.topic_registry.get(topic_id)
         if topic is None:
@@ -409,7 +517,19 @@ class Broker:
 
     def getMsg(self, topic_id: str, partition: int, offset: int) -> dict:
         """
-        Fetch message by coordinates.
+        Fetch a message by its exact coordinates.
+        
+        Args:
+            topic_id (str): Topic name
+            partition (int): Partition number
+            offset (int): Message offset
+            
+        Returns:
+            dict:  
+                - success (bool): Whether fetch succeeded
+                - topic_id (str): Name of the topic
+                - payload_size (int): Size of the message in bytes
+                - timestamp (int): Simulation time step when message was created
         """
         topic = self.topic_registry.get(topic_id)
         if topic is None:
@@ -432,7 +552,18 @@ class Broker:
 
     def getTopic(self, topic_id: str) -> dict:
         """
-        Fetch topic from topic registry.
+        Fetch topic metadata from the topic registry.
+        
+        Args:
+            topic_id (str): Topic name
+            
+        Returns: 
+            dict: 
+                - success (bool): Whether topic was found
+                - topic_id (str): Name of the topic
+                - num_partitions (int): Number of partitions in the topic
+                - priority (int): Priority tier of the topic
+                - total_messages (int): Total messages routed to the topic
         """
         topic = self.topic_registry.get(topic_id)
         if topic is None:
@@ -449,6 +580,14 @@ class Broker:
     def getPriority(self, topic_id: str) -> dict:
         """
         Fetch priority level from the topic.
+        
+        Args:
+            topic_id (str): Topic name
+            
+        Returns: 
+            dict: 
+                - success (bool): Whether topic was found
+                - priority (int): Priority tier
         """
         topic = self.topic_registry.get(topic_id)
         if topic is None:
