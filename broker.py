@@ -63,6 +63,7 @@ class Broker:
         num_partitions_per_topic: int = 3,
         retention_mode: str = "time",
         retention_steps: Optional[int] = 100,
+        last_time_check: Optional[int] = 100,
         capacity_byte: Optional[int] = None,
         eviction_batch_size: int = 1,
         lambda_weight: float = 0.8,
@@ -77,6 +78,7 @@ class Broker:
 
         self.retention_mode = retention_mode
         self.retention_steps = retention_steps
+        self.last_time_check = last_time_check
         self.capacity_byte = capacity_byte if capacity_byte is not None else total_storage
         self.eviction_batch_size = eviction_batch_size
 
@@ -143,6 +145,13 @@ class Broker:
         topic.total_messages += 1
         self.used_storage += payload_size
 
+        if self.retention_mode == "time" and timestamp - self.last_time_check > self.retention_steps:
+            self.dropMsg(
+                reason = self.retention_mode,
+                now=timestamp
+            )
+            self.last_time_check = timestamp
+
         # Optional: trigger retention cleanup after publish, otherwise cleanup periodically
         if self.used_storage > self.capacity_byte:
             self.dropMsg(
@@ -176,6 +185,13 @@ class Broker:
                 - timestamp (int): Message creation timestamp
                 - msg_revisit_count (int): Updated revisit count
         """
+        if self.retention_mode == "time" and current_time - self.last_time_check > self.retention_steps:
+            self.dropMsg(
+                reason = self.retention_mode,
+                now=current_time
+            )
+            self.last_time_check = current_time
+
         msg_result = self.getMsg(topic_id, partition, offset)
         if not msg_result["success"]:
             return {"success": False}
@@ -343,6 +359,25 @@ class Broker:
                         else:
                             new_messages.append(msg)
                     partition.messages = new_messages
+            
+            # while freed_bytes < bytes_needed:
+            #     print("storage full time")
+            #     oldest_messages = []
+            #     for topic in self.topic_registry.values():
+            #         oldest_topic_messages = []
+            #         for partition in topic.partitions.values():
+            #             oldest_topic_messages.append((partition.messages[0].timestamp, partition.partition_id))
+            #         oldest_topic_messages.sort()
+            #         oldest_topic_msg = oldest_topic_messages.append(topic.topic_id)
+            #         oldest_messages.append(oldest_topic_msg)
+            #     oldest_messages.sort()
+            #     timestamp, partition_id, topic_id = oldest_messages[0]
+            #     msg = self.topic_registry[topic_id].partitions[partition_id].pop(0)
+            #     dropped_count += 1
+            #     freed_bytes += msg.payload_size
+            #     dropped_topics.add(topic.topic_id)
+            #     self.used_storage -= msg.payload_size
+                
 
         elif reason == "lossy_priority":
             # Before lossy eviction, refresh topic priorities

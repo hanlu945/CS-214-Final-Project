@@ -182,16 +182,16 @@ def main():
     
     # Experiment 1: Short retention time (messages expire quickly)
     experiment_1 = run_experiment(
-        name="Short Retention Time (500 steps)",
+        name="Short Retention Time (3000 steps)",
         broker_config={
             'total_storage': 5_000_000,   # 5 MB
             'num_partitions_per_topic': 3,
             'retention_mode': 'time',
-            'retention_steps': 500,       # AGGRESSIVE: Only keep for 500 steps
+            'retention_steps': 3000,       # Only keep for 3000 steps
         },
         sim_config={
             'duration': 10000,            # Run longer
-            'publish_rate': 5,            # Publish often
+            'publish_rate': 3,            # Publish often
             'revisit_prob': 0.2,          # 20% revisit chance
             'num_topics': 3,
         }
@@ -199,16 +199,16 @@ def main():
     
     # Experiment 2: Very short retention (extreme)
     experiment_2 = run_experiment(
-        name="Very Short Retention (200 steps)",
+        name="Very Short Retention (1000 steps)",
         broker_config={
             'total_storage': 5_000_000,
             'num_partitions_per_topic': 3,
             'retention_mode': 'time',
-            'retention_steps': 200,       # VERY AGGRESSIVE: Only 200 steps
+            'retention_steps': 1000,       # AGGRESSIVE: Only 1000 steps
         },
         sim_config={
             'duration': 10000,
-            'publish_rate': 5,
+            'publish_rate': 3,
             'revisit_prob': 0.2,
             'num_topics': 3,
         }
