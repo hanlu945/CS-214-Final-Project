@@ -66,7 +66,7 @@ class SimpleSimulation:
         # Publish message
         result = self.broker.publishMsg(
             topic_id=topic_id,
-            payload_size=random.randint(100, 1000),
+            payload_size=random.randint(500, 2000),
             timestamp=time_step,
             producer_id="producer-1",
             key=None  # Random partition assignment
@@ -174,126 +174,156 @@ def run_experiment(name, broker_config, sim_config):
 
 
 def main():
-    """Run multiple experiments with AGGRESSIVE settings to show cache misses"""
+    """
+    Realistic Kafka Broker Simulation
+    Scale: 1:2000 of LinkedIn's original deployment (2011 paper)
+    
+    Broker: 500 MB (represents 1 TB production broker)
+    Duration: 2100 time steps (represents 7 days)
+    Messages: ~350K total (represents ~100M/day at production scale)
+    Message size: 500-2000 bytes (1 KB average)
+    """
+    
+    # ============================================
+    # CONFIGURATION
+    # ============================================
     
     print("\n" + "="*70)
-    print("RUNNING AGGRESSIVE EXPERIMENTS (to demonstrate cache misses)")
+    print("RUNNING EXPERIMENTS")
     print("="*70)
     
-    # Experiment 1: Short retention time (messages expire quickly)
-    experiment_1 = run_experiment(
-        name="Short Retention Time (3000 steps)",
-        broker_config={
-            'total_storage': 5_000_000,   # 5 MB
-            'num_partitions_per_topic': 3,
-            'retention_mode': 'time',
-            'retention_steps': 3000,       # Only keep for 3000 steps
-        },
-        sim_config={
-            'duration': 10000,            # Run longer
-            'publish_rate': 3,            # Publish often
-            'revisit_prob': 0.2,          # 20% revisit chance
-            'num_topics': 3,
-        }
-    )
-    
-    # Experiment 2: Very short retention (extreme)
-    experiment_2 = run_experiment(
-        name="Very Short Retention (1000 steps)",
-        broker_config={
-            'total_storage': 5_000_000,
-            'num_partitions_per_topic': 3,
-            'retention_mode': 'time',
-            'retention_steps': 1000,       # AGGRESSIVE: Only 1000 steps
-        },
-        sim_config={
-            'duration': 10000,
-            'publish_rate': 3,
-            'revisit_prob': 0.2,
-            'num_topics': 3,
-        }
-    )
-    
-    # Experiment 3: Limited storage capacity (lossy mode)
+    # # Experiment 1: Time-based Retention (10 MB storage, 1000 retention steps)
+    # experiment_1 = run_experiment(
+    #     name="Time-based Retention (10 MB storage, 1000 retention steps)",
+    #     broker_config={
+    #         'total_storage': 10_000_000,   # 10 MB
+    #         'num_partitions_per_topic': 3,
+    #         'retention_mode': 'time',
+    #         'retention_steps': 1000,   
+    #     },
+    #     sim_config={
+    #         'duration': 10_000,    
+    #         'publish_rate': 1,      
+    #         'revisit_prob': 0.33,    
+    #         'num_topics': 5,
+    #     }
+    # )
+
+    # # Experiment 2: Time-based Retention (10 MB storage, 2000 retention steps)
+    # experiment_2 = run_experiment(
+    #     name="Time-based Retention (10 MB storage, 2000 retention steps)",
+    #     broker_config={
+    #         'total_storage': 10_000_000,   # 10 MB
+    #         'num_partitions_per_topic': 3,
+    #         'retention_mode': 'time',
+    #         'retention_steps': 2000,   
+    #     },
+    #     sim_config={
+    #         'duration': 10_000,    
+    #         'publish_rate': 1,      
+    #         'revisit_prob': 0.33,    
+    #         'num_topics': 5,
+    #     }
+    # )
+
+    # Experiment 3: Time-based Retention (10 MB storage, 3400 retention steps)
     experiment_3 = run_experiment(
-        name="Limited Storage (1 MB capacity)",
+        name="Time-based Retention (10 MB storage, 3400 retention steps)",
         broker_config={
-            'total_storage': 2_000_000,   # 2 MB total
+            'total_storage': 10_000_000,   # 10 MB
             'num_partitions_per_topic': 3,
-            'retention_mode': 'lossy_priority',
-            'capacity_byte': 1_000_000,   # AGGRESSIVE: Only 1 MB capacity
-            'eviction_batch_size': 10,    # Evict 10 messages at a time
+            'retention_mode': 'time',
+            'retention_steps': 3400,   
         },
         sim_config={
-            'duration': 10000,
-            'publish_rate': 3,            # High production rate
-            'revisit_prob': 0.25,         # High revisit rate
-            'num_topics': 5,              # More topics
-        }
-    )
-    
-    # Experiment 4: Very limited storage (extreme lossy)
-    experiment_4 = run_experiment(
-        name="Very Limited Storage (500 KB capacity)",
-        broker_config={
-            'total_storage': 1_000_000,   # 1 MB total
-            'num_partitions_per_topic': 3,
-            'retention_mode': 'lossy_priority',
-            'capacity_byte': 500_000,     # VERY AGGRESSIVE: 500 KB capacity
-            'eviction_batch_size': 20,    # Evict 20 at a time
-        },
-        sim_config={
-            'duration': 10000,
-            'publish_rate': 2,            # Very high production
-            'revisit_prob': 0.3,          # High revisit
+            'duration': 10_000,    
+            'publish_rate': 1,      
+            'revisit_prob': 0.33,    
             'num_topics': 5,
         }
     )
     
-    # Experiment 5: High load with moderate retention
-    experiment_5 = run_experiment(
-        name="High Load + Moderate Retention",
+    # Experiment 4: Lossy-priority Retention (10 MB storage, 80% Utilization)
+    experiment_4 = run_experiment(
+        name="Lossy-priority Retention (10 MB storage, 80% Utilization)",
         broker_config={
-            'total_storage': 3_000_000,   # 3 MB
+            'total_storage': 10_000_000,   # 10 MB total
             'num_partitions_per_topic': 3,
-            'retention_mode': 'time',
-            'retention_steps': 1000,      # Moderate retention
+            'retention_mode': 'lossy_priority',
+            'capacity_byte': 8_000_000,    # 8 MB capacity
+            'eviction_batch_size': 20,
         },
         sim_config={
-            'duration': 15000,            # Very long run
-            'publish_rate': 2,            # Very high production
-            'revisit_prob': 0.15,         # Moderate revisit
-            'num_topics': 4,
+            'duration': 10_000,
+            'publish_rate': 1,            
+            'revisit_prob': 0.33,         
+            'num_topics': 5,              
         }
     )
     
+    # # Experiment 4: Very limited storage (extreme lossy)
+    # experiment_4 = run_experiment(
+    #     name="Very Limited Storage (500 KB capacity)",
+    #     broker_config={
+    #         'total_storage': 1_000_000,   # 1 MB total
+    #         'num_partitions_per_topic': 3,
+    #         'retention_mode': 'lossy_priority',
+    #         'capacity_byte': 500_000,     # VERY AGGRESSIVE: 500 KB capacity
+    #         'eviction_batch_size': 20,    # Evict 20 at a time
+    #     },
+    #     sim_config={
+    #         'duration': 10000,
+    #         'publish_rate': 2,            # Very high production
+    #         'revisit_prob': 0.3,          # High revisit
+    #         'num_topics': 5,
+    #     }
+    # )
+    
+    # # Experiment 5: High load with moderate retention
+    # experiment_5 = run_experiment(
+    #     name="High Load + Moderate Retention",
+    #     broker_config={
+    #         'total_storage': 3_000_000,   # 3 MB
+    #         'num_partitions_per_topic': 3,
+    #         'retention_mode': 'time',
+    #         'retention_steps': 1000,      # Moderate retention
+    #     },
+    #     sim_config={
+    #         'duration': 15000,            # Very long run
+    #         'publish_rate': 2,            # Very high production
+    #         'revisit_prob': 0.15,         # Moderate revisit
+    #         'num_topics': 4,
+    #     }
+    # )
+    
     # Summary comparison
-    print("\n\n" + "="*70)
+    print("\n\n" + "="*100)
     print("EXPERIMENT SUMMARY")
-    print("="*70)
-    print(f"{'Experiment':<45} {'Hit Rate':>10} {'Misses':>8} {'Published':>10}")
-    print("-"*70)
+    print("="*100)
+    print(f"{'Experiment':<60} {'Hit Rate':>10} {'Misses':>8} {'Published':>10}")
+    print("-"*100)
     
     experiments = [
-        ("Short Retention Time (500 steps)", experiment_1),
-        ("Very Short Retention (200 steps)", experiment_2),
-        ("Limited Storage (1 MB capacity)", experiment_3),
-        ("Very Limited Storage (500 KB)", experiment_4),
-        ("High Load + Moderate Retention", experiment_5),
+        # ("Time-based Retention (10 MB storage, 1000 retention steps)", experiment_1),
+        # ("Time-based Retention (10 MB storage, 2000 retention steps)", experiment_2),
+        ("Time-based Retention (10 MB storage, 3400 retention steps)", experiment_3),
+        ("Lossy-priority Retention (10 MB storage, 80% Utilization)", experiment_4),
+        # ("Very Limited Storage (500 KB)", experiment_4),
+        # ("High Load + Moderate Retention", experiment_5),
     ]
     
     for name, metrics in experiments:
         hit_rate = metrics['hit_rate'] * 100
         misses = metrics['cache_misses']
         published = metrics['total_published']
-        print(f"{name:<45} {hit_rate:>9.1f}% {misses:>8} {published:>10}")
+        print(f"{name:<60} {hit_rate:>9.1f}% {misses:>8} {published:>10}")
     
-    print("="*70)
-    print("\nKey Insights:")
-    print("- Lower hit rate = More aggressive retention (more deletions)")
-    print("- Cache misses = Messages deleted before they could be revisited")
-    print("- Compare different retention strategies and their trade-offs")
-    print("="*70)
+    # print("="*70)
+    # print("\nKey Insights:")
+    # print("- Lower hit rate = More aggressive retention (more deletions)")
+    # print("- Cache misses = Messages deleted before they could be revisited")
+    # print("- Compare different retention strategies and their trade-offs")
+    # print("="*70)
 
 
 if __name__ == "__main__":
