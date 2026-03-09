@@ -238,21 +238,21 @@ def main():
     MESSAGE_SIZE_MIN = 500
     MESSAGE_SIZE_MAX = 2000
 
-    # skewed_weights = {
-    #     'topic-0': 3.5,  # High priority (35% of accesses)
-    #     'topic-1': 3.5,  # High priority (35% of accesses)
-    #     'topic-2': 1.0,  # Low priority (10%)
-    #     'topic-3': 1.0,  # Low priority (10%)
-    #     'topic-4': 1.0,  # Low priority (10%)
-    # }
-
     skewed_weights = {
-        'topic-0': 2.0,  # Equal priority (20%)
-        'topic-1': 2.0,  # Equal priority (20%)
-        'topic-2': 2.0,  # Equal priority (20%)
-        'topic-3': 2.0,  # Equal priority (20%)
-        'topic-4': 2.0,  # Equal priority (20%)
+        'topic-0': 3.5,  # High priority (35% of accesses)
+        'topic-1': 3.5,  # High priority (35% of accesses)
+        'topic-2': 1.0,  # Low priority (10%)
+        'topic-3': 1.0,  # Low priority (10%)
+        'topic-4': 1.0,  # Low priority (10%)
     }
+
+    # skewed_weights = {
+    #     'topic-0': 2.0,  # Equal priority (20%)
+    #     'topic-1': 2.0,  # Equal priority (20%)
+    #     'topic-2': 2.0,  # Equal priority (20%)
+    #     'topic-3': 2.0,  # Equal priority (20%)
+    #     'topic-4': 2.0,  # Equal priority (20%)
+    # }
 
     # Experiment 1: Time-based Retention (10 MB storage, 850 retention steps)
     experiment_1 = run_experiment(
@@ -453,7 +453,7 @@ def main():
     print("\n\n" + "="*100)
     print("EXPERIMENT SUMMARY")
     print("="*100)
-    print(f"{'Experiment':<60} {'Hit Rate':>10} {'Misses':>8} {'Published':>10}")
+    print(f"{'Experiment':<70} {'Hit Rate':>10} {'Misses':>8} {'Published':>10}")
     print("-"*100)
     
     experiments = [
@@ -473,7 +473,7 @@ def main():
         hit_rate = metrics['hit_rate'] * 100
         misses = metrics['cache_misses']
         published = metrics['total_published']
-        print(f"{name:<60} {hit_rate:>9.1f}% {misses:>8} {published:>10}")
+        print(f"{name:<70} {hit_rate:>9.1f}% {misses:>8} {published:>10}")
 
 if __name__ == "__main__":
     main()
