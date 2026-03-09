@@ -238,17 +238,25 @@ def main():
     MESSAGE_SIZE_MIN = 500
     MESSAGE_SIZE_MAX = 2000
 
+    # skewed_weights = {
+    #     'topic-0': 3.5,  # High priority (35% of accesses)
+    #     'topic-1': 3.5,  # High priority (35% of accesses)
+    #     'topic-2': 1.0,  # Low priority (10%)
+    #     'topic-3': 1.0,  # Low priority (10%)
+    #     'topic-4': 1.0,  # Low priority (10%)
+    # }
+
     skewed_weights = {
-        'topic-0': 3.5,  # High priority (35% of accesses)
-        'topic-1': 3.5,  # High priority (35% of accesses)
-        'topic-2': 1.0,  # Low priority (10%)
-        'topic-3': 1.0,  # Low priority (10%)
-        'topic-4': 1.0,  # Low priority (10%)
+        'topic-0': 2.0,  # Equal priority (20%)
+        'topic-1': 2.0,  # Equal priority (20%)
+        'topic-2': 2.0,  # Equal priority (20%)
+        'topic-3': 2.0,  # Equal priority (20%)
+        'topic-4': 2.0,  # Equal priority (20%)
     }
 
     # Experiment 1: Time-based Retention (10 MB storage, 850 retention steps)
     experiment_1 = run_experiment(
-        name="Time-based Retention (10 MB storage, 850 retention steps)",
+        name="Time-based Retention (skewed, 10 MB storage, 850 retention steps)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB
             'num_partitions_per_topic': 3,
@@ -267,7 +275,7 @@ def main():
     
     # Experiment 2: Lossy-priority Retention (10 MB storage, 20% Utilization)
     experiment_2 = run_experiment(
-        name="Lossy-priority Retention (10 MB storage, 20% Utilization)",
+        name="Lossy-priority Retention (skewed, 10 MB storage, 20% Utilization)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB total
             'num_partitions_per_topic': 3,
@@ -287,7 +295,7 @@ def main():
 
     # Experiment 3: Time-based Retention (10 MB storage, 1650 retention steps)
     experiment_3 = run_experiment(
-        name="Time-based Retention (10 MB storage, 1650 retention steps)",
+        name="Time-based Retention (skewed, 10 MB storage, 1650 retention steps)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB
             'num_partitions_per_topic': 3,
@@ -306,7 +314,7 @@ def main():
     
     # Experiment 4: Lossy-priority Retention (10 MB storage, 40% Utilization)
     experiment_4 = run_experiment(
-        name="Lossy-priority Retention (10 MB storage, 40% Utilization)",
+        name="Lossy-priority Retention (skewed, 10 MB storage, 40% Utilization)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB total
             'num_partitions_per_topic': 3,
@@ -326,7 +334,7 @@ def main():
     
     # Experiment 5: Time-based Retention (10 MB storage, 2500 retention steps)
     experiment_5 = run_experiment(
-        name="Time-based Retention (10 MB storage, 2500 retention steps)",
+        name="Time-based Retention (skewed, 10 MB storage, 2500 retention steps)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB
             'num_partitions_per_topic': 3,
@@ -345,7 +353,7 @@ def main():
     
     # Experiment 6: Lossy-priority Retention (10 MB storage, 60% Utilization)
     experiment_6 = run_experiment(
-        name="Lossy-priority Retention (10 MB storage, 60% Utilization)",
+        name="Lossy-priority Retention (skewed, 10 MB storage, 60% Utilization)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB total
             'num_partitions_per_topic': 3,
@@ -365,7 +373,7 @@ def main():
 
     # Experiment 7: Time-based Retention (10 MB storage, 3400 retention steps)
     experiment_7 = run_experiment(
-        name="Time-based Retention (10 MB storage, 3400 retention steps)",
+        name="Time-based Retention (skewed, 10 MB storage, 3400 retention steps)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB
             'num_partitions_per_topic': 3,
@@ -384,7 +392,7 @@ def main():
     
     # Experiment 8: Lossy-priority Retention (10 MB storage, 80% Utilization)
     experiment_8 = run_experiment(
-        name="Lossy-priority Retention (10 MB storage, 80% Utilization)",
+        name="Lossy-priority Retention (skewed, 10 MB storage, 80% Utilization)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB total
             'num_partitions_per_topic': 3,
@@ -404,7 +412,7 @@ def main():
 
     # Experiment 9: Time-based Retention (10 MB storage, 4000 retention steps)
     experiment_9 = run_experiment(
-        name="Time-based Retention (10 MB storage, 4000 retention steps)",
+        name="Time-based Retention (skewed, 10 MB storage, 4000 retention steps)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB
             'num_partitions_per_topic': 3,
@@ -423,7 +431,7 @@ def main():
     
     # Experiment 10: Lossy-priority Retention (10 MB storage, 100% Utilization)
     experiment_10 = run_experiment(
-        name="Lossy-priority Retention (10 MB storage, 100% Utilization)",
+        name="Lossy-priority Retention (skewed, 10 MB storage, 100% Utilization)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB total
             'num_partitions_per_topic': 3,
@@ -449,16 +457,16 @@ def main():
     print("-"*100)
     
     experiments = [
-        ("Time-based Retention (10 MB storage, 850 retention steps)", experiment_1),
-        ("Lossy-priority Retention (10 MB storage, 20% Utilization)", experiment_2),
-        ("Time-based Retention (10 MB storage, 1650 retention steps)", experiment_3),
-        ("Lossy-priority Retention (10 MB storage, 40% Utilization)", experiment_4),
-        ("Time-based Retention (10 MB storage, 2500 retention steps)", experiment_5),
-        ("Lossy-priority Retention (10 MB storage, 60% Utilization)", experiment_6),
-        ("Time-based Retention (10 MB storage, 3400 retention steps)", experiment_7),
-        ("Lossy-priority Retention (10 MB storage, 80% Utilization)", experiment_8),
-        ("Time-based Retention (10 MB storage, 4000 retention steps)", experiment_9),
-        ("Lossy-priority Retention (10 MB storage, 100% Utilization)", experiment_10),
+        ("Time-based Retention (skewed, 10 MB storage, 850 retention steps)", experiment_1),
+        ("Lossy-priority Retention (skewed, 10 MB storage, 20% Utilization)", experiment_2),
+        ("Time-based Retention (skewed, 10 MB storage, 1650 retention steps)", experiment_3),
+        ("Lossy-priority Retention (skewed, 10 MB storage, 40% Utilization)", experiment_4),
+        ("Time-based Retention (skewed, 10 MB storage, 2500 retention steps)", experiment_5),
+        ("Lossy-priority Retention (skewed, 10 MB storage, 60% Utilization)", experiment_6),
+        ("Time-based Retention (skewed, 10 MB storage, 3400 retention steps)", experiment_7),
+        ("Lossy-priority Retention (skewed, 10 MB storage, 80% Utilization)", experiment_8),
+        ("Time-based Retention (skewed, 10 MB storage, 4000 retention steps)", experiment_9),
+        ("Lossy-priority Retention (skewed, 10 MB storage, 100% Utilization)", experiment_10),
     ]
     
     for name, metrics in experiments:
