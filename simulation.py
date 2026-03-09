@@ -16,15 +16,24 @@ class SimpleSimulation:
         publish_rate=10,      # Publish every N time steps
         revisit_prob=0.1,     # Probability of revisiting old message
         num_topics=3,         # Number of topics to create
+        message_size_range=(500, 2000),
+        topic_access_weights=None,  # NEW: Dict of topic_id -> weight
     ):
         self.broker = broker
         self.duration = duration
         self.publish_rate = publish_rate
         self.revisit_prob = revisit_prob
         self.num_topics = num_topics
+        self.message_size_range = message_size_range
+        self.topic_access_weights = topic_access_weights
         
         # Track published messages for revisits
         self.published_messages = []
+        
+        # Track published messages by topic (for weighted access)
+        self.published_messages_by_topic = {}
+        for i in range(num_topics):
+            self.published_messages_by_topic[f"topic-{i}"] = []
         
         # Metrics
         self.total_published = 0
@@ -34,12 +43,15 @@ class SimpleSimulation:
     
     def run(self):
         """Run the simulation"""
+        access_pattern = "WEIGHTED" if self.topic_access_weights else "UNIFORM"
         print(f"\n{'='*70}")
         print(f"Starting Simulation:")
         print(f"  Duration: {self.duration} time steps")
         print(f"  Publish rate: every {self.publish_rate} steps")
         print(f"  Revisit probability: {self.revisit_prob}")
         print(f"  Topics: {self.num_topics}")
+        if self.topic_access_weights:
+            print(f"  Access weights: {self.topic_access_weights}")
         print(f"{'='*70}\n")
         
         for time_step in range(self.duration):
@@ -63,34 +75,46 @@ class SimpleSimulation:
         # Choose random topic
         topic_id = f"topic-{random.randint(0, self.num_topics - 1)}"
         
+        # Get message size from configured range
+        min_size, max_size = self.message_size_range
+        
         # Publish message
         result = self.broker.publishMsg(
             topic_id=topic_id,
-            payload_size=random.randint(500, 2000),
+            payload_size=random.randint(min_size, max_size),
             timestamp=time_step,
             producer_id="producer-1",
-            key=None  # Random partition assignment
+            key=None
         )
         
         if result['success']:
             self.total_published += 1
-            # Save for potential revisit
-            self.published_messages.append({
+            msg_info = {
                 'topic_id': topic_id,
                 'partition': result['partition'],
                 'offset': result['offset'],
                 'time': time_step
-            })
+            }
+            # Save for potential revisit
+            self.published_messages.append(msg_info)
+            # Also save by topic
+            self.published_messages_by_topic[topic_id].append(msg_info)
     
     def consume_messages(self, time_step):
-        """Randomly revisit old messages"""
+        """Revisit old messages with optional topic-based weighting"""
         if not self.published_messages:
             return
         
         # Revisit with some probability
         if random.random() < self.revisit_prob:
-            # Pick random old message
-            old_msg = random.choice(self.published_messages)
+            # Choose message based on topic access weights
+            if self.topic_access_weights:
+                old_msg = self._select_message_weighted()
+            else:
+                old_msg = random.choice(self.published_messages)
+            
+            if old_msg is None:
+                return
             
             # Try to consume it
             result = self.broker.consumeMsg(
@@ -104,6 +128,31 @@ class SimpleSimulation:
                 self.cache_hits += 1
             else:
                 self.cache_misses += 1
+
+    def _select_message_weighted(self):
+        """Select a message from topics based on access weights"""
+        # Filter out topics with no published messages
+        available_topics = [
+            topic for topic in self.topic_access_weights.keys()
+            if len(self.published_messages_by_topic.get(topic, [])) > 0
+        ]
+        
+        if not available_topics:
+            return None
+        
+        # Get weights for available topics
+        weights = [self.topic_access_weights[topic] for topic in available_topics]
+        
+        # Normalize weights to probabilities
+        total_weight = sum(weights)
+        probabilities = [w / total_weight for w in weights]
+        
+        # Select topic based on weights
+        selected_topic = random.choices(available_topics, weights=probabilities, k=1)[0]
+        
+        # Select random message from that topic
+        topic_messages = self.published_messages_by_topic[selected_topic]
+        return random.choice(topic_messages)
     
     def sample_storage(self, time_step):
         """Sample storage usage"""
@@ -176,12 +225,6 @@ def run_experiment(name, broker_config, sim_config):
 def main():
     """
     Realistic Kafka Broker Simulation
-    Scale: 1:2000 of LinkedIn's original deployment (2011 paper)
-    
-    Broker: 500 MB (represents 1 TB production broker)
-    Duration: 2100 time steps (represents 7 days)
-    Messages: ~350K total (represents ~100M/day at production scale)
-    Message size: 500-2000 bytes (1 KB average)
     """
     
     # ============================================
@@ -191,43 +234,137 @@ def main():
     print("\n" + "="*70)
     print("RUNNING EXPERIMENTS")
     print("="*70)
+
+    MESSAGE_SIZE_MIN = 500
+    MESSAGE_SIZE_MAX = 2000
+
+    skewed_weights = {
+        'topic-0': 3.5,  # High priority (35% of accesses)
+        'topic-1': 3.5,  # High priority (35% of accesses)
+        'topic-2': 1.0,  # Low priority (10%)
+        'topic-3': 1.0,  # Low priority (10%)
+        'topic-4': 1.0,  # Low priority (10%)
+    }
+
+    # Experiment 1: Time-based Retention (10 MB storage, 850 retention steps)
+    experiment_1 = run_experiment(
+        name="Time-based Retention (10 MB storage, 850 retention steps)",
+        broker_config={
+            'total_storage': 10_000_000,   # 10 MB
+            'num_partitions_per_topic': 3,
+            'retention_mode': 'time',
+            'retention_steps': 850,   
+        },
+        sim_config={
+            'duration': 10_000,    
+            'publish_rate': 1,      
+            'revisit_prob': 0.33,    
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED
+        }
+    )
     
-    # # Experiment 1: Time-based Retention (10 MB storage, 1000 retention steps)
-    # experiment_1 = run_experiment(
-    #     name="Time-based Retention (10 MB storage, 1000 retention steps)",
-    #     broker_config={
-    #         'total_storage': 10_000_000,   # 10 MB
-    #         'num_partitions_per_topic': 3,
-    #         'retention_mode': 'time',
-    #         'retention_steps': 1000,   
-    #     },
-    #     sim_config={
-    #         'duration': 10_000,    
-    #         'publish_rate': 1,      
-    #         'revisit_prob': 0.33,    
-    #         'num_topics': 5,
-    #     }
-    # )
+    # Experiment 2: Lossy-priority Retention (10 MB storage, 20% Utilization)
+    experiment_2 = run_experiment(
+        name="Lossy-priority Retention (10 MB storage, 20% Utilization)",
+        broker_config={
+            'total_storage': 10_000_000,   # 10 MB total
+            'num_partitions_per_topic': 3,
+            'retention_mode': 'lossy_priority',
+            'capacity_byte': 2_000_000,    # 2 MB capacity
+            'eviction_batch_size': 20,
+        },
+        sim_config={
+            'duration': 10_000,
+            'publish_rate': 1,            
+            'revisit_prob': 0.33,         
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED              
+        }
+    )
 
-    # # Experiment 2: Time-based Retention (10 MB storage, 2000 retention steps)
-    # experiment_2 = run_experiment(
-    #     name="Time-based Retention (10 MB storage, 2000 retention steps)",
-    #     broker_config={
-    #         'total_storage': 10_000_000,   # 10 MB
-    #         'num_partitions_per_topic': 3,
-    #         'retention_mode': 'time',
-    #         'retention_steps': 2000,   
-    #     },
-    #     sim_config={
-    #         'duration': 10_000,    
-    #         'publish_rate': 1,      
-    #         'revisit_prob': 0.33,    
-    #         'num_topics': 5,
-    #     }
-    # )
-
-    # Experiment 3: Time-based Retention (10 MB storage, 3400 retention steps)
+    # Experiment 3: Time-based Retention (10 MB storage, 1650 retention steps)
     experiment_3 = run_experiment(
+        name="Time-based Retention (10 MB storage, 1650 retention steps)",
+        broker_config={
+            'total_storage': 10_000_000,   # 10 MB
+            'num_partitions_per_topic': 3,
+            'retention_mode': 'time',
+            'retention_steps': 1650,   
+        },
+        sim_config={
+            'duration': 10_000,    
+            'publish_rate': 1,      
+            'revisit_prob': 0.33,    
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED
+        }
+    )
+    
+    # Experiment 4: Lossy-priority Retention (10 MB storage, 40% Utilization)
+    experiment_4 = run_experiment(
+        name="Lossy-priority Retention (10 MB storage, 40% Utilization)",
+        broker_config={
+            'total_storage': 10_000_000,   # 10 MB total
+            'num_partitions_per_topic': 3,
+            'retention_mode': 'lossy_priority',
+            'capacity_byte': 4_000_000,    # 4 MB capacity
+            'eviction_batch_size': 20,
+        },
+        sim_config={
+            'duration': 10_000,
+            'publish_rate': 1,            
+            'revisit_prob': 0.33,         
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED              
+        }
+    )
+    
+    # Experiment 5: Time-based Retention (10 MB storage, 2500 retention steps)
+    experiment_5 = run_experiment(
+        name="Time-based Retention (10 MB storage, 2500 retention steps)",
+        broker_config={
+            'total_storage': 10_000_000,   # 10 MB
+            'num_partitions_per_topic': 3,
+            'retention_mode': 'time',
+            'retention_steps': 2500,   
+        },
+        sim_config={
+            'duration': 10_000,    
+            'publish_rate': 1,      
+            'revisit_prob': 0.33,    
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED
+        }
+    )
+    
+    # Experiment 6: Lossy-priority Retention (10 MB storage, 60% Utilization)
+    experiment_6 = run_experiment(
+        name="Lossy-priority Retention (10 MB storage, 60% Utilization)",
+        broker_config={
+            'total_storage': 10_000_000,   # 10 MB total
+            'num_partitions_per_topic': 3,
+            'retention_mode': 'lossy_priority',
+            'capacity_byte': 6_000_000,    # 6 MB capacity
+            'eviction_batch_size': 20,
+        },
+        sim_config={
+            'duration': 10_000,
+            'publish_rate': 1,            
+            'revisit_prob': 0.33,         
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED              
+        }
+    )
+
+    # Experiment 7: Time-based Retention (10 MB storage, 3400 retention steps)
+    experiment_7 = run_experiment(
         name="Time-based Retention (10 MB storage, 3400 retention steps)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB
@@ -240,11 +377,13 @@ def main():
             'publish_rate': 1,      
             'revisit_prob': 0.33,    
             'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED
         }
     )
     
-    # Experiment 4: Lossy-priority Retention (10 MB storage, 80% Utilization)
-    experiment_4 = run_experiment(
+    # Experiment 8: Lossy-priority Retention (10 MB storage, 80% Utilization)
+    experiment_8 = run_experiment(
         name="Lossy-priority Retention (10 MB storage, 80% Utilization)",
         broker_config={
             'total_storage': 10_000_000,   # 10 MB total
@@ -257,44 +396,50 @@ def main():
             'duration': 10_000,
             'publish_rate': 1,            
             'revisit_prob': 0.33,         
-            'num_topics': 5,              
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED              
+        }
+    )
+
+    # Experiment 9: Time-based Retention (10 MB storage, 4000 retention steps)
+    experiment_9 = run_experiment(
+        name="Time-based Retention (10 MB storage, 4000 retention steps)",
+        broker_config={
+            'total_storage': 10_000_000,   # 10 MB
+            'num_partitions_per_topic': 3,
+            'retention_mode': 'time',
+            'retention_steps': 4000,   
+        },
+        sim_config={
+            'duration': 10_000,    
+            'publish_rate': 1,      
+            'revisit_prob': 0.33,    
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED
         }
     )
     
-    # # Experiment 4: Very limited storage (extreme lossy)
-    # experiment_4 = run_experiment(
-    #     name="Very Limited Storage (500 KB capacity)",
-    #     broker_config={
-    #         'total_storage': 1_000_000,   # 1 MB total
-    #         'num_partitions_per_topic': 3,
-    #         'retention_mode': 'lossy_priority',
-    #         'capacity_byte': 500_000,     # VERY AGGRESSIVE: 500 KB capacity
-    #         'eviction_batch_size': 20,    # Evict 20 at a time
-    #     },
-    #     sim_config={
-    #         'duration': 10000,
-    #         'publish_rate': 2,            # Very high production
-    #         'revisit_prob': 0.3,          # High revisit
-    #         'num_topics': 5,
-    #     }
-    # )
-    
-    # # Experiment 5: High load with moderate retention
-    # experiment_5 = run_experiment(
-    #     name="High Load + Moderate Retention",
-    #     broker_config={
-    #         'total_storage': 3_000_000,   # 3 MB
-    #         'num_partitions_per_topic': 3,
-    #         'retention_mode': 'time',
-    #         'retention_steps': 1000,      # Moderate retention
-    #     },
-    #     sim_config={
-    #         'duration': 15000,            # Very long run
-    #         'publish_rate': 2,            # Very high production
-    #         'revisit_prob': 0.15,         # Moderate revisit
-    #         'num_topics': 4,
-    #     }
-    # )
+    # Experiment 10: Lossy-priority Retention (10 MB storage, 100% Utilization)
+    experiment_10 = run_experiment(
+        name="Lossy-priority Retention (10 MB storage, 100% Utilization)",
+        broker_config={
+            'total_storage': 10_000_000,   # 10 MB total
+            'num_partitions_per_topic': 3,
+            'retention_mode': 'lossy_priority',
+            'capacity_byte': 10_000_000,    # 10 MB capacity
+            'eviction_batch_size': 20,
+        },
+        sim_config={
+            'duration': 10_000,
+            'publish_rate': 1,            
+            'revisit_prob': 0.33,         
+            'num_topics': 5,
+            'message_size_range': (MESSAGE_SIZE_MIN, MESSAGE_SIZE_MAX),
+            'topic_access_weights': skewed_weights,  # SKEWED              
+        }
+    )
     
     # Summary comparison
     print("\n\n" + "="*100)
@@ -304,12 +449,16 @@ def main():
     print("-"*100)
     
     experiments = [
-        # ("Time-based Retention (10 MB storage, 1000 retention steps)", experiment_1),
-        # ("Time-based Retention (10 MB storage, 2000 retention steps)", experiment_2),
-        ("Time-based Retention (10 MB storage, 3400 retention steps)", experiment_3),
-        ("Lossy-priority Retention (10 MB storage, 80% Utilization)", experiment_4),
-        # ("Very Limited Storage (500 KB)", experiment_4),
-        # ("High Load + Moderate Retention", experiment_5),
+        ("Time-based Retention (10 MB storage, 850 retention steps)", experiment_1),
+        ("Lossy-priority Retention (10 MB storage, 20% Utilization)", experiment_2),
+        ("Time-based Retention (10 MB storage, 1650 retention steps)", experiment_3),
+        ("Lossy-priority Retention (10 MB storage, 40% Utilization)", experiment_4),
+        ("Time-based Retention (10 MB storage, 2500 retention steps)", experiment_5),
+        ("Lossy-priority Retention (10 MB storage, 60% Utilization)", experiment_6),
+        ("Time-based Retention (10 MB storage, 3400 retention steps)", experiment_7),
+        ("Lossy-priority Retention (10 MB storage, 80% Utilization)", experiment_8),
+        ("Time-based Retention (10 MB storage, 4000 retention steps)", experiment_9),
+        ("Lossy-priority Retention (10 MB storage, 100% Utilization)", experiment_10),
     ]
     
     for name, metrics in experiments:
@@ -317,14 +466,6 @@ def main():
         misses = metrics['cache_misses']
         published = metrics['total_published']
         print(f"{name:<60} {hit_rate:>9.1f}% {misses:>8} {published:>10}")
-    
-    # print("="*70)
-    # print("\nKey Insights:")
-    # print("- Lower hit rate = More aggressive retention (more deletions)")
-    # print("- Cache misses = Messages deleted before they could be revisited")
-    # print("- Compare different retention strategies and their trade-offs")
-    # print("="*70)
-
 
 if __name__ == "__main__":
     main()
